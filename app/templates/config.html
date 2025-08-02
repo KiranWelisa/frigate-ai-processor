@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="nl">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Analyzer Configuration</title>
+    <title>Analyzer Configuratie</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
@@ -24,15 +24,15 @@
             <div class="collapse navbar-collapse">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item"><a class="nav-link" href="/">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link active" href="/config">Configuration</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/config">Configuratie</a></li>
                 </ul>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
-        <h1 class="h2 mb-4">Configuration</h1>
-        <p class="text-muted">Edit the settings below. The application service will restart automatically after you save.</p>
+        <h1 class="h2 mb-4">Configuratie</h1>
+        <p class="text-muted">Pas de instellingen hieronder aan. De applicatie zal automatisch herstarten na het opslaan.</p>
         
         <form method="post">
             <div class="row">
@@ -52,19 +52,24 @@
                                 <input type="text" class="form-control" id="mqtt_broker" name="mqtt_broker" value="{{ config.mqtt_broker }}" required>
                             </div>
                             <div class="mb-3">
-                                <label for="mqtt_port" class="form-label">MQTT Port</label>
+                                <label for="mqtt_port" class="form-label">MQTT Poort</label>
                                 <input type="number" class="form-control" id="mqtt_port" name="mqtt_port" value="{{ config.mqtt_port }}" required>
                             </div>
                             <div class="mb-3">
-                                <label for="mqtt_username" class="form-label">MQTT Username <small class="text-muted">(Optional)</small></label>
+                                <label for="mqtt_username" class="form-label">MQTT Gebruikersnaam <small class="text-muted">(Optioneel)</small></label>
                                 <input type="text" class="form-control" id="mqtt_username" name="mqtt_username" value="{{ config.mqtt_username }}">
                             </div>
                             <div class="mb-3">
-                                <label for="mqtt_password" class="form-label">MQTT Password <small class="text-muted">(Optional)</small></label>
+                                <label for="mqtt_password" class="form-label">MQTT Wachtwoord <small class="text-muted">(Optioneel)</small></label>
                                 <input type="password" class="form-control" id="mqtt_password" name="mqtt_password" value="{{ config.mqtt_password }}">
                             </div>
+                            <div class="mb-3">
+                                <label for="mqtt_events_topic" class="form-label">MQTT Events Topic</label>
+                                <input type="text" class="form-control" id="mqtt_events_topic" name="mqtt_events_topic" value="{{ config.get('mqtt_events_topic', 'frigate/events') }}" required>
+                                <div class="form-text">De topic waarop de applicatie luistert naar Frigate-evenementen.</div>
+                            </div>
                              <div class="mb-3">
-                                <label for="mqtt_result_topic" class="form-label">MQTT Result Topic</label>
+                                <label for="mqtt_result_topic" class="form-label">MQTT Resultaat Topic</label>
                                 <input type="text" class="form-control" id="mqtt_result_topic" name="mqtt_result_topic" value="{{ config.mqtt_result_topic }}" required>
                             </div>
                         </div>
@@ -81,7 +86,7 @@
                             <div class="mb-3">
                                 <label for="gemini_api_key" class="form-label">Gemini API Key</label>
                                 <input type="password" class="form-control" id="gemini_api_key" name="gemini_api_key" value="{{ config.gemini_api_key }}" required>
-                                <div class="form-text">Your API key is stored securely and not displayed in the UI.</div>
+                                <div class="form-text">Uw API key wordt veilig opgeslagen en niet getoond in de UI.</div>
                             </div>
                             <hr>
                             <h5>Event Filters</h5>
@@ -90,7 +95,7 @@
                                 <div class="row filter-row mb-2 align-items-center">
                                     <div class="col-5">
                                         <label class="form-label visually-hidden">Camera</label>
-                                        <input type="text" class="form-control" name="camera" placeholder="Camera Name" value="{{ filter.camera }}">
+                                        <input type="text" class="form-control" name="camera" placeholder="Cameranaam" value="{{ filter.camera }}">
                                     </div>
                                     <div class="col-5">
                                         <label class="form-label visually-hidden">Label</label>
@@ -102,21 +107,21 @@
                                 </div>
                                 {% endfor %}
                             </div>
-                            <button type="button" id="add-filter" class="btn btn-secondary btn-sm mt-2">Add Filter</button>
+                            <button type="button" id="add-filter" class="btn btn-secondary btn-sm mt-2">Filter Toevoegen</button>
                         </div>
                     </div>
                     <div class="card">
                         <div class="card-body">
                              <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox" role="switch" id="debug" name="debug" {% if config.debug %}checked{% endif %}>
-                                <label class="form-check-label" for="debug">Enable Debug Mode</label>
-                                <div class="form-text">Logs all events, not just filtered ones.</div>
+                                <label class="form-check-label" for="debug">Debug Mode Inschakelen</label>
+                                <div class="form-text">Logt alle events, niet alleen de gefilterde.</div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
-            <button type="submit" class="btn btn-primary btn-lg mt-3">Save and Restart</button>
+            <button type="submit" class="btn btn-primary btn-lg mt-3">Opslaan en Herstarten</button>
         </form>
     </div>
 
@@ -127,7 +132,7 @@
             newFilter.className = 'row filter-row mb-2 align-items-center';
             newFilter.innerHTML = `
                 <div class="col-5">
-                    <input type="text" class="form-control" name="camera" placeholder="Camera Name">
+                    <input type="text" class="form-control" name="camera" placeholder="Cameranaam">
                 </div>
                 <div class="col-5">
                     <input type="text" class="form-control" name="label" placeholder="Object Label">
