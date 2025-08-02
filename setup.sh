@@ -7,10 +7,10 @@ set -e
 # --- Configuration ---
 CTID=${1:-300} # Default CT ID is 300, or pass as first argument
 HOSTNAME="frigate-ai-processor"
-TEMPLATE="ubuntu-22.04-standard_22.04-1_amd64.tar.zst" # Using a stable LTS release
+TEMPLATE="ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
 STORAGE="local-lvm" # Change if your storage is named differently
-DISK_SIZE="8" # FIX: Removed the 'G' suffix. Size is in GB.
-MEMORY="1024"
+DISK_SIZE="8" # Size in GB
+MEMORY="1024" # In MB
 CORES="1"
 BRIDGE="vmbr0" # Change if your network bridge is different
 
@@ -22,11 +22,11 @@ NC='\033[0m'
 
 # --- Helper function for logging ---
 log() {
-    echo -e "${GREEN}$(date '+%Y-%m-%d %H:%M:%S') - $1${NC}"
+    echo -e "${GREEN}[INFO] $1${NC}"
 }
 
 error() {
-    echo -e "${RED}$(date '+%Y-%m-%d %H:%M:%S') - ERROR: $1${NC}"
+    echo -e "${RED}[ERROR] $1${NC}" >&2
     exit 1
 }
 
@@ -35,20 +35,19 @@ log "Checking prerequisites..."
 if ! command -v pct &> /dev/null; then
     error "This script must be run on a Proxmox VE host."
 fi
-
 if [[ $EUID -ne 0 ]]; then
     error "This script must be run as root."
 fi
 
 # --- 2. Check for existing container ---
 if pct status $CTID &> /dev/null; then
-    echo -e "${YELLOW}Container $CTID already exists.${NC}"
+    echo -e "${YELLOW}[WARN] Container $CTID already exists.${NC}"
     read -p "Do you want to destroy it and create a new one? (y/N) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         log "Stopping and destroying existing container..."
         pct stop $CTID &>/dev/null || true
-        pct destroy $CTID
+        pct destroy $CTID --force
     else
         echo "Aborted."
         exit 1
@@ -62,7 +61,6 @@ if ! pveam list local | grep -q $TEMPLATE; then
     pveam download local $TEMPLATE
 fi
 
-# FIX: Corrected the --rootfs parameter syntax.
 pct create $CTID local:vztmpl/$TEMPLATE \
     --hostname $HOSTNAME \
     --rootfs $STORAGE:$DISK_SIZE \
@@ -77,20 +75,20 @@ log "Waiting for container to get an IP address..."
 sleep 15 # Give container time to boot and get DHCP lease
 
 # --- 4. Install Dependencies inside the Container ---
-log "Installing dependencies inside the container..."
+log "Installing dependencies: git, python, pip, venv, and ffmpeg..."
 pct exec $CTID -- apt-get update
 pct exec $CTID -- apt-get upgrade -y
 pct exec $CTID -- apt-get install -y python3-pip python3-venv git ffmpeg
 
 # --- 5. Setup Application inside the Container ---
-log "Setting up the application..."
+log "Cloning the application repository..."
 APP_DIR="/opt/frigate-ai-processor"
 pct exec $CTID -- git clone https://github.com/KiranWelisa/frigate-ai-processor.git $APP_DIR
 
 log "Creating Python virtual environment..."
 pct exec $CTID -- python3 -m venv $APP_DIR/venv
 
-log "Installing Python dependencies..."
+log "Installing Python dependencies from requirements.txt..."
 pct exec $CTID -- bash -c "source $APP_DIR/venv/bin/activate && pip install --upgrade pip && pip install -r $APP_DIR/requirements.txt"
 
 # --- 6. Create and Enable Systemd Service ---
@@ -104,9 +102,10 @@ After=network.target
 User=root
 Group=root
 WorkingDirectory=$APP_DIR
-Environment=\"PATH=$APP_DIR/venv/bin\"
+# Correctly point to the venv python executable
 ExecStart=$APP_DIR/venv/bin/python app/main.py
 Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
