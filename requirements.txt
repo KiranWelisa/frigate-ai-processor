@@ -1,14 +1,16 @@
-Flask==3.0.0
-flask-cors==4.0.0
-flask-socketio==5.3.6
-python-socketio==5.11.0
-paho-mqtt==2.0.0
-requests==2.31.0
-google-genai==0.2.2
-google-generativeai==0.8.3
-Pillow==10.2.0
-numpy==1.26.4
-opencv-python-headless==4.9.0.80
-python-dotenv==1.0.1
-gunicorn==21.2.0
-eventlet==0.35.2
+# Flask and web server components
+Flask
+gunicorn
+eventlet
+
+# MQTT client
+paho-mqtt
+
+# HTTP requests
+requests
+
+# Google Gemini AI
+google-generativeai
+
+# For video processing (used by main.py indirectly via ffmpeg)
+# No package needed here, ffmpeg is installed via apt in the setup script.

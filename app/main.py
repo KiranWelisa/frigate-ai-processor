@@ -1,419 +1,254 @@
 import os
 import json
-import time
 import logging
 import threading
-import queue
+import subprocess
 from datetime import datetime
-from pathlib import Path
-
+from flask import Flask, render_template, request, jsonify, redirect, url_for
 import paho.mqtt.client as mqtt
 import requests
-from flask import Flask, render_template, request, jsonify, send_from_directory
-from flask_socketio import SocketIO, emit
-from flask_cors import CORS
-from PIL import Image
-import cv2
-import numpy as np
-from google import genai
-from google.genai.types import Tool, GenerateContentConfig, GenerationConfig
-import tempfile
+import google.generativeai as genai
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('/opt/frigate-ai-processor/logs/processor.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Flask app setup
-app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
-
-# Load configuration
-CONFIG_FILE = '/opt/frigate-ai-processor/config/config.json'
+# --- Configuration ---
+# The config file is stored in the app directory.
+CONFIG_FILE = os.path.join(os.path.dirname(__file__), 'config.json')
+DEFAULT_CONFIG = {
+    "frigate_url": "http://192.168.1.10:5000",
+    "mqtt_broker": "192.168.1.11",
+    "mqtt_port": 1883,
+    "mqtt_username": "",
+    "mqtt_password": "",
+    "mqtt_result_topic": "frigate/analyzer/result",
+    "gemini_api_key": "YOUR_GEMINI_API_KEY",
+    "filters": [
+        {"camera": "front_door", "label": "person"}
+    ],
+    "debug": False
+}
 
 def load_config():
-    default_config = {
-        "mqtt": {
-            "broker": "192.168.2.76",
-            "port": 1883,
-            "username": "",
-            "password": "",
-            "client_id": "frigate-ai-processor",
-            "topics": {
-                "events": "frigate/events",
-                "results": "frigate/ai/results"
-            }
-        },
-        "frigate": {
-            "api_url": "http://192.168.2.72:5000",
-            "api_key": ""
-        },
-        "gemini": {
-            "api_key": "",
-            "model": "gemini-2.0-flash-exp",
-            "temperature": 0,
-            "max_tokens": 1000,
-            "frames_to_extract": 20
-        },
-        "filters": {
-            "cameras": ["Tuin"],
-            "objects": ["bird"]
-        },
-        "debug_mode": False
-    }
-    
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, 'r') as f:
-            return json.load(f)
-    else:
-        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+    """Loads configuration from a JSON file, creating it if it doesn't exist."""
+    if not os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, 'w') as f:
-            json.dump(default_config, f, indent=2)
-        return default_config
+            json.dump(DEFAULT_CONFIG, f, indent=4)
+    with open(CONFIG_FILE, 'r') as f:
+        return json.load(f)
 
-def save_config(config):
-    with open(CONFIG_FILE, 'w') as f:
-        json.dump(config, f, indent=2)
-
-# Global variables
 config = load_config()
-mqtt_client = None
-gemini_client = None
-event_queue = queue.Queue()
-debug_mode = config.get('debug_mode', False)
 
-# Initialize Gemini client
-def init_gemini():
-    global gemini_client
-    if config['gemini']['api_key']:
-        try:
-            gemini_client = genai.Client(api_key=config['gemini']['api_key'])
-            logger.info("Gemini client initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize Gemini client: {e}")
-            gemini_client = None
+# --- Logging Setup ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+log_messages = [] # In-memory log for the web UI
 
-# MQTT callbacks
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
-        logger.info("Connected to MQTT broker")
-        client.subscribe(config['mqtt']['topics']['events'])
-        socketio.emit('log', {'message': 'Connected to MQTT broker', 'level': 'info'})
-    else:
-        logger.error(f"Failed to connect to MQTT broker: {rc}")
-        socketio.emit('log', {'message': f'Failed to connect to MQTT broker: {rc}', 'level': 'error'})
-
-def on_message(client, userdata, msg):
-    try:
-        payload = json.loads(msg.payload.decode())
-        event_queue.put(payload)
-    except Exception as e:
-        logger.error(f"Error processing MQTT message: {e}")
-
-def on_disconnect(client, userdata, rc):
-    logger.warning("Disconnected from MQTT broker")
-    socketio.emit('log', {'message': 'Disconnected from MQTT broker', 'level': 'warning'})
-
-# Initialize MQTT client
-def init_mqtt():
-    global mqtt_client
-    mqtt_client = mqtt.Client(client_id=config['mqtt']['client_id'])
-    
-    if config['mqtt']['username']:
-        mqtt_client.username_pw_set(config['mqtt']['username'], config['mqtt']['password'])
-    
-    mqtt_client.on_connect = on_connect
-    mqtt_client.on_message = on_message
-    mqtt_client.on_disconnect = on_disconnect
-    
-    try:
-        mqtt_client.connect(config['mqtt']['broker'], config['mqtt']['port'], 60)
-        mqtt_client.loop_start()
-    except Exception as e:
-        logger.error(f"Failed to connect to MQTT broker: {e}")
-
-# Process events
-def process_events():
-    while True:
-        try:
-            event = event_queue.get(timeout=1)
-            process_single_event(event)
-        except queue.Empty:
-            continue
-        except Exception as e:
-            logger.error(f"Error processing event: {e}")
-
-def process_single_event(event):
-    # Log all events in debug mode
-    if debug_mode:
-        socketio.emit('debug_event', {
-            'event': event,
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    # Check if event matches filters
-    if event.get('type') == 'new':
-        after = event.get('after', {})
-        camera = after.get('camera')
-        label = after.get('label')
-        
-        # Check filters
-        camera_match = camera in config['filters']['cameras']
-        object_match = label in config['filters']['objects']
-        
-        if debug_mode:
-            socketio.emit('log', {
-                'message': f"Event from {camera} with {label} - Camera match: {camera_match}, Object match: {object_match}",
-                'level': 'debug'
-            })
-        
-        if camera_match and object_match:
-            logger.info(f"Processing event: {after.get('id')} - {camera}/{label}")
-            socketio.emit('log', {
-                'message': f"Processing event: {after.get('id')} - {camera}/{label}",
-                'level': 'info'
-            })
-            
-            # Process with Gemini
-            process_with_gemini(event)
-
-def download_video_clip(event_id):
-    """Download video clip from Frigate"""
-    try:
-        url = f"{config['frigate']['api_url']}/api/events/{event_id}/clip.mp4"
-        headers = {}
-        if config['frigate']['api_key']:
-            headers['Authorization'] = f"Bearer {config['frigate']['api_key']}"
-        
-        response = requests.get(url, headers=headers, stream=True)
-        response.raise_for_status()
-        
-        # Save to temporary file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
-        for chunk in response.iter_content(chunk_size=8192):
-            temp_file.write(chunk)
-        temp_file.close()
-        
-        return temp_file.name
-    except Exception as e:
-        logger.error(f"Failed to download video clip: {e}")
-        return None
-
-def extract_frames(video_path, num_frames=20):
-    """Extract frames from video"""
-    frames = []
-    try:
-        cap = cv2.VideoCapture(video_path)
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        
-        if total_frames == 0:
-            return frames
-        
-        indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
-        
-        for idx in indices:
-            cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-            ret, frame = cap.read()
-            if ret:
-                # Convert BGR to RGB
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frames.append(frame_rgb)
-        
-        cap.release()
-    except Exception as e:
-        logger.error(f"Failed to extract frames: {e}")
-    
-    return frames
-
-def analyze_with_gemini(frames):
-    """Analyze frames with Gemini AI"""
-    if not gemini_client:
-        logger.error("Gemini client not initialized")
-        return None
-    
-    try:
-        # Convert frames to PIL images
-        pil_images = [Image.fromarray(frame) for frame in frames]
-        
-        # Create prompt
-        prompt = "Analyze these video frames. Is there a Reiger (heron) visible? Respond with JSON only."
-        
-        # Prepare content
-        content = [prompt]
-        for img in pil_images:
-            content.append(img)
-        
-        # Generate response with structured output
-        response = gemini_client.models.generate_content(
-            model=config['gemini']['model'],
-            contents=content,
-            config=GenerateContentConfig(
-                temperature=config['gemini']['temperature'],
-                max_output_tokens=config['gemini']['max_tokens'],
-                response_mime_type="application/json",
-                response_schema={
-                    "type": "object",
-                    "properties": {
-                        "Reiger": {"type": "boolean"},
-                        "Probability": {"type": "number"}
-                    },
-                    "required": ["Probability"]
-                }
-            )
-        )
-        
-        # Parse response
-        result = json.loads(response.text)
-        return result
-    except Exception as e:
-        logger.error(f"Gemini analysis failed: {e}")
-        return None
-
-def process_with_gemini(event):
-    """Main processing function"""
-    event_id = event['after']['id']
-    
-    # Download video
-    socketio.emit('log', {'message': f'Downloading video for event {event_id}', 'level': 'info'})
-    video_path = download_video_clip(event_id)
-    
-    if not video_path:
-        socketio.emit('log', {'message': f'Failed to download video for event {event_id}', 'level': 'error'})
+def log_message(level, message):
+    """Logs a message and adds it to the in-memory log for the UI."""
+    log_level = level.upper()
+    if log_level == 'DEBUG' and not config.get('debug', False):
         return
-    
-    try:
-        # Extract frames
-        socketio.emit('log', {'message': f'Extracting frames from video', 'level': 'info'})
-        frames = extract_frames(video_path, config['gemini']['frames_to_extract'])
         
-        if not frames:
-            socketio.emit('log', {'message': f'No frames extracted', 'level': 'error'})
-            return
-        
-        # Analyze with Gemini
-        socketio.emit('log', {'message': f'Analyzing with Gemini AI', 'level': 'info'})
-        result = analyze_with_gemini(frames)
-        
-        if result:
-            # Publish result to MQTT
-            mqtt_result = {
-                'event_id': event_id,
-                'timestamp': datetime.now().isoformat(),
-                'camera': event['after']['camera'],
-                'reiger_detected': result.get('Reiger', False),
-                'probability': result.get('Probability', 0.0)
-            }
-            
-            mqtt_client.publish(
-                config['mqtt']['topics']['results'],
-                json.dumps(mqtt_result)
-            )
-            
-            # Emit to web interface
-            socketio.emit('analysis_result', mqtt_result)
-            socketio.emit('log', {
-                'message': f'Analysis complete - Reiger: {mqtt_result["reiger_detected"]}, Probability: {mqtt_result["probability"]:.2f}',
-                'level': 'success'
-            })
-        
-    finally:
-        # Cleanup
-        if os.path.exists(video_path):
-            os.unlink(video_path)
+    log_entry = f"<span class='log-{level.lower()}'>[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{log_level}] {message}</span>"
+    log_messages.insert(0, log_entry)
+    if len(log_messages) > 200: # Keep the log list from growing indefinitely
+        log_messages.pop()
+    logging.log(getattr(logging, log_level), message)
 
-# Flask routes
+# --- Flask Web App ---
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.urandom(24)
+
 @app.route('/')
 def index():
-    return render_template('index.html')
+    """Renders the main dashboard page."""
+    return render_template('index.html', logs=log_messages, debug=config.get('debug', False))
 
-@app.route('/config')
-def config_page():
-    return render_template('config.html')
-
-@app.route('/api/config', methods=['GET'])
-def get_config():
-    return jsonify(config)
-
-@app.route('/api/config', methods=['POST'])
-def update_config():
-    global config, debug_mode
-    try:
-        new_config = request.json
-        save_config(new_config)
-        config = new_config
-        debug_mode = config.get('debug_mode', False)
+@app.route('/config', methods=['GET', 'POST'])
+def config_editor():
+    """Handles the configuration page for viewing and updating settings."""
+    if request.method == 'POST':
+        global config
+        # A more robust way to handle form data for lists
+        new_config_data = request.form.to_dict()
         
-        # Restart services with new config
-        restart_services()
+        filters = []
+        filter_cameras = request.form.getlist('camera')
+        filter_labels = request.form.getlist('label')
+        for i in range(len(filter_cameras)):
+            if filter_cameras[i] and filter_labels[i]: # Add filter only if both fields are filled
+                 filters.append({'camera': filter_cameras[i], 'label': filter_labels[i]})
         
-        return jsonify({'status': 'success', 'message': 'Configuration updated successfully'})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 400
+        # Reconstruct the config object from form data
+        new_config = {
+            "frigate_url": new_config_data.get('frigate_url'),
+            "mqtt_broker": new_config_data.get('mqtt_broker'),
+            "mqtt_port": int(new_config_data.get('mqtt_port')),
+            "mqtt_username": new_config_data.get('mqtt_username'),
+            "mqtt_password": new_config_data.get('mqtt_password'),
+            "mqtt_result_topic": new_config_data.get('mqtt_result_topic'),
+            "gemini_api_key": new_config_data.get('gemini_api_key'),
+            "filters": filters,
+            "debug": 'debug' in new_config_data
+        }
+
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(new_config, f, indent=4)
+
+        log_message('INFO', 'Configuration saved. Please restart the service for changes to take full effect.')
+        # For a production app, a more graceful restart mechanism is recommended.
+        # A simple approach is to have the systemd service restart the app on exit.
+        os._exit(1)
+        
+    return render_template('config.html', config=config)
 
 @app.route('/health')
 def health():
-    return jsonify({
-        'status': 'healthy',
-        'mqtt_connected': mqtt_client.is_connected() if mqtt_client else False,
-        'gemini_initialized': gemini_client is not None
-    })
+    """A simple health check endpoint."""
+    return "OK", 200
 
-@app.route('/api/thumbnail/<event_id>')
-def get_thumbnail(event_id):
+# --- MQTT Client Logic ---
+mqtt_client = None
+
+def on_connect(client, userdata, flags, rc):
+    """Callback for when the client connects to the MQTT broker."""
+    if rc == 0:
+        log_message('INFO', "Connected to MQTT Broker!")
+        client.subscribe("frigate/events")
+    else:
+        log_message('ERROR', f"Failed to connect to MQTT, return code {rc}")
+
+def on_message(client, userdata, msg):
+    """Callback for when a message is received from the MQTT broker."""
     try:
-        url = f"{config['frigate']['api_url']}/api/events/{event_id}/thumbnail.jpg"
-        headers = {}
-        if config['frigate']['api_key']:
-            headers['Authorization'] = f"Bearer {config['frigate']['api_key']}"
+        event = json.loads(msg.payload.decode())
+        # We are interested in the 'end' event type, which signifies the event is complete.
+        if event.get('type') == 'end':
+            # Process each event in its own thread to avoid blocking the MQTT loop
+            threading.Thread(target=process_event, args=(event,)).start()
+    except json.JSONDecodeError:
+        log_message('ERROR', "Failed to decode MQTT message payload.")
+    except Exception as e:
+        log_message('ERROR', f"Error processing MQTT message: {e}")
+
+def process_event(event):
+    """Filters an event and triggers analysis if it matches."""
+    event_id = event.get('id', 'unknown_event')
+    camera = event.get('camera', 'unknown_camera')
+    label = event.get('label', 'unknown_label')
+    
+    log_message('DEBUG', f"Received event: id={event_id}, camera={camera}, label={label}")
+
+    filter_passed = any(
+        f.get('camera') == camera and f.get('label') == label
+        for f in config.get('filters', [])
+    )
+    
+    log_message('DEBUG', f"Event {event_id}: Filter check passed: {filter_passed}")
+
+    if filter_passed:
+        log_message('INFO', f"Event {event_id} matched filter ({camera}/{label}). Starting analysis...")
+        analyze_video(event)
+    elif config.get('debug', False):
+        log_message('INFO', f"Event {event_id} did not match filters.")
+
+def analyze_video(event):
+    """Downloads a video clip, extracts frames, and sends them to Gemini for analysis."""
+    event_id = event['id']
+    clip_path = f"/tmp/{event['camera']}-{event_id}.mp4"
+    
+    # 1. Download clip from Frigate API
+    try:
+        url = f"{config['frigate_url']}/api/events/{event_id}/clip.mp4"
+        response = requests.get(url, stream=True, timeout=60)
+        response.raise_for_status()
+        with open(clip_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        log_message('INFO', f"Event {event_id}: Clip downloaded successfully.")
+    except requests.exceptions.RequestException as e:
+        log_message('ERROR', f"Event {event_id}: Failed to download clip: {e}")
+        return
+
+    # 2. Extract frames using ffmpeg
+    frames_dir = f"/tmp/{event_id}_frames"
+    os.makedirs(frames_dir, exist_ok=True)
+    try:
+        subprocess.run(
+            ['ffmpeg', '-i', clip_path, '-vf', 'fps=1', f'{frames_dir}/frame-%04d.jpg'],
+            check=True, capture_output=True, text=True, timeout=60
+        )
+        log_message('INFO', f"Event {event_id}: Extracted frames from video.")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        log_message('ERROR', f"Event {event_id}: Failed to extract frames: {getattr(e, 'stderr', e)}")
+        subprocess.run(['rm', '-rf', frames_dir, clip_path], check=False)
+        return
+
+    # 3. Analyze with Gemini
+    try:
+        genai.configure(api_key=config['gemini_api_key'])
+        # Use a stable, recommended model
+        model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+        frame_files = sorted([os.path.join(frames_dir, f) for f in os.listdir(frames_dir)])
+        if not frame_files:
+            log_message('WARNING', f"Event {event_id}: No frames were extracted.")
+            return
+
+        # Use a subset of frames to be efficient
+        sample_frames = frame_files[::len(frame_files)//20 + 1][:20]
+        log_message('DEBUG', f"Event {event_id}: Sending {len(sample_frames)} frames to Gemini.")
+
+        # Prepare the prompt and files for the API call
+        prompt = "Analyze these video frames. Is a 'Reiger' (heron) present? Respond with a JSON object containing a boolean 'Reiger' field and a 'Probability' field (0-1)."
+        files_to_send = [genai.upload_file(path=f) for f in sample_frames]
         
-        response = requests.get(url, headers=headers)
-        return response.content, 200, {'Content-Type': 'image/jpeg'}
-    except:
-        return '', 404
+        # Generate content with the specified JSON schema in the prompt itself
+        response = model.generate_content([prompt] + files_to_send,
+                                          generation_config={"response_mime_type": "application/json"})
+        
+        result = json.loads(response.text)
+        log_message('INFO', f"Event {event_id}: Gemini analysis result: {result}")
 
-# WebSocket events
-@socketio.on('connect')
-def handle_connect():
-    emit('connected', {'data': 'Connected to server'})
+        # 4. Publish result to MQTT
+        result_payload = {
+            "event_id": event_id,
+            "camera": event['camera'],
+            "label": event['label'],
+            "reiger_detected": result.get("Reiger", False),
+            "probability": result.get("Probability", 0.0),
+        }
+        mqtt_client.publish(config['mqtt_result_topic'], json.dumps(result_payload))
+        log_message('INFO', f"Event {event_id}: Published analysis result to MQTT.")
 
-@socketio.on('toggle_debug')
-def handle_debug_toggle(data):
-    global debug_mode
-    debug_mode = data.get('enabled', False)
-    config['debug_mode'] = debug_mode
-    save_config(config)
-    emit('debug_mode_changed', {'enabled': debug_mode})
+    except Exception as e:
+        log_message('ERROR', f"Event {event_id}: Gemini analysis failed: {e}")
+    finally:
+        # 5. Cleanup temporary files
+        log_message('DEBUG', f"Event {event_id}: Cleaning up temporary files.")
+        subprocess.run(['rm', '-rf', frames_dir], check=False)
+        subprocess.run(['rm', '-f', clip_path], check=False)
 
-def restart_services():
-    """Restart MQTT and Gemini services with new config"""
+def start_mqtt_client():
+    """Initializes and starts the MQTT client loop."""
     global mqtt_client
+    client_id = f"frigate-analyzer-{os.getpid()}"
+    mqtt_client = mqtt.Client(client_id=client_id)
+    if config.get('mqtt_username'):
+        mqtt_client.username_pw_set(config['mqtt_username'], config.get('mqtt_password'))
     
-    # Restart MQTT
-    if mqtt_client:
-        mqtt_client.loop_stop()
-        mqtt_client.disconnect()
-    init_mqtt()
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
     
-    # Restart Gemini
-    init_gemini()
+    try:
+        mqtt_client.connect(config['mqtt_broker'], config['mqtt_port'], 60)
+        mqtt_client.loop_forever() # This is a blocking call
+    except Exception as e:
+        log_message('CRITICAL', f"Could not connect to MQTT broker. The application will not work. Error: {e}")
 
-# Main startup
+# --- Main Application Execution ---
 if __name__ == '__main__':
-    # Initialize services
-    init_gemini()
-    init_mqtt()
+    # Start the MQTT client in a separate thread so it doesn't block the web server
+    mqtt_thread = threading.Thread(target=start_mqtt_client, daemon=True)
+    mqtt_thread.start()
     
-    # Start event processor thread
-    processor_thread = threading.Thread(target=process_events, daemon=True)
-    processor_thread.start()
-    
-    # Start Flask app
-    socketio.run(app, host='0.0.0.0', port=5001, debug=False)
+    # Run the Flask web server
+    # Use 'debug=False' for production. The reloader can interfere with threads.
+    app.run(host='0.0.0.0', port=5001, debug=False)
