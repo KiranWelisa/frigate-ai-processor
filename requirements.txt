@@ -1,5 +1,6 @@
 # Flask and web server components
 Flask
+flask-socketio
 gunicorn
 eventlet
 
@@ -11,6 +12,3 @@ requests
 
 # Google Gemini AI
 google-generativeai
-
-# For video processing (used by main.py indirectly via ffmpeg)
-# No package needed here, ffmpeg is installed via apt in the setup script.

@@ -9,7 +9,7 @@ CTID=${1:-300} # Default CT ID is 300, or pass as first argument
 HOSTNAME="frigate-ai-processor"
 TEMPLATE="ubuntu-22.04-standard_22.04-1_amd64.tar.zst" # Using a stable LTS release
 STORAGE="local-lvm" # Change if your storage is named differently
-DISK_SIZE="8G"
+DISK_SIZE="8" # FIX: Removed the 'G' suffix. Size is in GB.
 MEMORY="1024"
 CORES="1"
 BRIDGE="vmbr0" # Change if your network bridge is different
@@ -62,10 +62,10 @@ if ! pveam list local | grep -q $TEMPLATE; then
     pveam download local $TEMPLATE
 fi
 
+# FIX: Corrected the --rootfs parameter syntax.
 pct create $CTID local:vztmpl/$TEMPLATE \
     --hostname $HOSTNAME \
-    --storage $STORAGE \
-    --rootfs $DISK_SIZE \
+    --rootfs $STORAGE:$DISK_SIZE \
     --memory $MEMORY \
     --swap 512 \
     --cores $CORES \
