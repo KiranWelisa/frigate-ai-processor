@@ -17,20 +17,20 @@ An intelligent event processor that monitors Frigate NVR events via MQTT, analyz
 This script will create a new LXC container, install all dependencies, and set up the application to run as a service.
 
 ```bash
-# Download and run the setup script on your Proxmox host
+# Download the latest setup script, overwriting any old version, and run it
 wget -O setup.sh [https://raw.githubusercontent.com/KiranWelisa/frigate-ai-processor/main/setup.sh](https://raw.githubusercontent.com/KiranWelisa/frigate-ai-processor/main/setup.sh)
 chmod +x setup.sh
 ./setup.sh
-```
+````
 
 You can pass a container ID as an argument (e.g., `./setup.sh 301`). If not provided, it defaults to `300`.
 
 ## 📋 Prerequisites
 
-- A **Proxmox VE** host system.
-- A running **Frigate NVR** instance accessible via HTTP API.
-- An **MQTT Broker** (e.g., Mosquitto) that Frigate is publishing events to.
-- A **Google Gemini API Key** from [Google AI Studio](https://aistudio.google.com/apikey).
+  - A **Proxmox VE** host system.
+  - A running **Frigate NVR** instance accessible via HTTP API.
+  - An **MQTT Broker** (e.g., Mosquitto) that Frigate is publishing events to.
+  - A **Google Gemini API Key** from [Google AI Studio](https://aistudio.google.com/apikey).
 
 ## ⚙️ Configuration
 
@@ -44,8 +44,8 @@ The application will automatically restart to apply the new settings upon saving
 
 ## 🖥️ Usage
 
-- **Dashboard**: `http://<CONTAINER_IP>:5001`
-- **Configuration**: `http://<CONTAINER_IP>:5001/config`
+  - **Dashboard**: `http://<CONTAINER_IP>:5001`
+  - **Configuration**: `http://<CONTAINER_IP>:5001/config`
 
 ### Service Management
 
