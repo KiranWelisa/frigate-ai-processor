@@ -15,7 +15,7 @@ An intelligent event processor that monitors Frigate NVR events via MQTT, analyz
 
 ```bash
 # Download and run the setup script
-wget https://raw.githubusercontent.com/YOUR_USERNAME/frigate-ai-processor/main/setup.sh
+wget https://raw.githubusercontent.com/KiranWelisa/frigate-ai-processor/main/setup.sh
 chmod +x setup.sh
 ./setup.sh
 ```
