@@ -1,100 +1,69 @@
 # Frigate AI Processor
 
-An intelligent event processor that monitors Frigate NVR events via MQTT, analyzes video clips using Google Gemini AI to detect herons (Reiger), and provides a web-based dashboard for monitoring and configuration.
+An intelligent event processor that monitors Frigate NVR events via MQTT, analyzes video clips using Google Gemini AI to detect specific objects (e.g., herons), and provides a real-time web dashboard for monitoring and configuration.
 
-## Features
+## ✨ Features
 
-- 🎥 **Real-time Event Processing**: Monitors Frigate events via MQTT
-- 🤖 **AI-Powered Detection**: Uses Google Gemini 2.0 Flash for heron detection
-- 🌐 **Web Dashboard**: Live monitoring interface with event display
-- ⚙️ **Web Configuration**: Easy configuration without command line access
-- 🐛 **Debug Mode**: Detailed logging for troubleshooting
-- 💾 **Persistent Config**: JSON-based configuration that survives restarts
+- **Real-time Event Processing**: Listens to Frigate events via MQTT and processes them instantly.
+- **AI-Powered Analysis**: Uses Google Gemini 1.5 Flash for accurate and fast video frame analysis.
+- **Dynamic Web Dashboard**: A live-updating single-page interface to view processed events and logs.
+- **Web-Based Configuration**: Easily configure all settings (MQTT, Frigate, Gemini, Filters) from a web form. No SSH required.
+- **Persistent JSON Config**: All your settings are saved and survive container restarts.
+- **Smart Filtering**: Process only the events you care about based on camera and object labels.
+- **Health Monitoring**: Includes a `/health` endpoint for container health checks.
 
-## Quick Installation on Proxmox VE
+## 🚀 Quick Installation on Proxmox VE
+
+This script will create a new LXC container, install all dependencies, and set up the application to run as a service.
 
 ```bash
-# Download and run the setup script
-wget https://raw.githubusercontent.com/KiranWelisa/frigate-ai-processor/main/setup.sh
+# Download and run the setup script on your Proxmox host
+wget -O setup.sh [https://raw.githubusercontent.com/KiranWelisa/frigate-ai-processor/main/setup.sh](https://raw.githubusercontent.com/KiranWelisa/frigate-ai-processor/main/setup.sh)
 chmod +x setup.sh
 ./setup.sh
 ```
 
-The script will:
-1. Create an LXC container with Ubuntu 24.04
-2. Install all dependencies
-3. Download and configure the application
-4. Start the service automatically
+You can pass a container ID as an argument (e.g., `./setup.sh 301`). If not provided, it defaults to `300`.
 
-## Prerequisites
+## 📋 Prerequisites
 
-- **Proxmox VE** host system
-- **Frigate NVR** accessible via HTTP API
-- **MQTT Broker** (e.g., Mosquitto)
-- **Google Gemini API Key** from [Google AI Studio](https://aistudio.google.com/apikey)
+- A **Proxmox VE** host system.
+- A running **Frigate NVR** instance accessible via HTTP API.
+- An **MQTT Broker** (e.g., Mosquitto) that Frigate is publishing events to.
+- A **Google Gemini API Key** from [Google AI Studio](https://aistudio.google.com/apikey).
 
-## Configuration
+## ⚙️ Configuration
 
-After installation, access the web interface at `http://CONTAINER_IP:5001/config` to configure:
+After the installation script finishes, access the web interface at `http://<CONTAINER_IP>:5001/config` to set up:
 
-- MQTT broker connection details
-- Frigate API URL
-- Google Gemini API key
-- Camera and object filters
+1.  **Frigate & MQTT**: URLs, ports, and credentials.
+2.  **Gemini AI**: Your API key.
+3.  **Event Filters**: The specific `camera` and `object label` combinations you want to analyze.
 
-## Usage
+The application will automatically restart to apply the new settings upon saving.
 
-### Web Interface
-- **Dashboard**: `http://CONTAINER_IP:5001`
-- **Configuration**: `http://CONTAINER_IP:5001/config`
+## 🖥️ Usage
+
+- **Dashboard**: `http://<CONTAINER_IP>:5001`
+- **Configuration**: `http://<CONTAINER_IP>:5001/config`
 
 ### Service Management
+
+You can manage the application service from your Proxmox host using `pct exec`.
+
 ```bash
-# View logs
+# (Example using CT ID 300)
+
+# View live logs
 pct exec 300 -- journalctl -u frigate-ai-processor -f
 
-# Restart service
+# Restart the service
 pct exec 300 -- systemctl restart frigate-ai-processor
 
-# Check status
+# Check the service status
 pct exec 300 -- systemctl status frigate-ai-processor
-```
-
-## How It Works
-
-1. **Event Reception**: Listens to Frigate's MQTT events
-2. **Filtering**: Processes only events matching configured cameras/objects
-3. **Video Download**: Retrieves video clip from Frigate API
-4. **Frame Extraction**: Extracts frames for analysis
-5. **AI Analysis**: Sends frames to Gemini for heron detection
-6. **Result Publishing**: Publishes results back to MQTT
-
-## MQTT Message Format
-
-### Input (Frigate Events)
-```json
-{
-  "type": "new",
-  "after": {
-    "id": "event-id",
-    "camera": "Tuin",
-    "label": "bird",
-    "start_time": 1234567890.123
-  }
-}
-```
-
-### Output (Analysis Results)
-```json
-{
-  "event_id": "event-id",
-  "timestamp": "2025-01-20T10:30:00Z",
-  "camera": "Tuin",
-  "reiger_detected": true,
-  "probability": 0.85
-}
 ```
 
 ## License
 
-MIT License - See LICENSE file for details
+This project is licensed under the MIT License - see the `LICENSE` file for details.
