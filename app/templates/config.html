@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frigate AI Processor Configuration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background-color: #2a2a2a;
+            padding: 20px 0;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #444;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #4a9eff;
+            font-size: 2.5rem;
+        }
+        
+        .config-section {
+            background-color: #2a2a2a;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        
+        .config-section h2 {
+            color: #4a9eff;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #ccc;
+            font-weight: 500;
+        }
+        
+        input[type="text"],
+        input[type="password"],
+        input[type="number"],
+        textarea {
+            width: 100%;
+            padding: 10px;
+            background-color: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 1rem;
+        }
+        
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="number"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+        
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .btn {
+            background-color: #4a9eff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s;
+            margin-right: 10px;
+        }
+        
+        .btn:hover {
+            background-color: #357abd;
+        }
+        
+        .btn-secondary {
+            background-color: #666;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #555;
+        }
+        
+        .button-group {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 30px;
+        }
+        
+        .message {
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .message.success {
+            background-color: #4caf50;
+            color: white;
+        }
+        
+        .message.error {
+            background-color: #f44336;
+            color: white;
+        }
+        
+        .help-text {
+            font-size: 0.9rem;
+            color: #888;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Configuration</h1>
+        </div>
+    </header>
+    
+    <div class="container">
+        <div id="message" class="message"></div>
+        
+        <form id="config-form">
+            <div class="config-section">
+                <h2>MQTT Configuration</h2>
+                <div class="form-group">
+                    <label for="mqtt-broker">Broker Address</label>
+                    <input type="text" id="mqtt-broker" name="mqtt.broker" required>
+                    <div class="help-text">IP address or hostname of your MQTT broker</div>
+                </div>
+                <div class="form-group">
+                    <label for="mqtt-port">Port</label>
+                    <input type="number" id="mqtt-port" name="mqtt.port" value="1883" required>
+                </div>
+                <div class="form-group">
+                    <label for="mqtt-username">Username (optional)</label>
+                    <input type="text" id="mqtt-username" name="mqtt.username">
+                </div>
+                <div class="form-group">
+                    <label for="mqtt-password">Password (optional)</label>
+                    <input type="password" id="mqtt-password" name="mqtt.password">
+                </div>
+                <div class="form-group">
+                    <label for="mqtt-events-topic">Events Topic</label>
+                    <input type="text" id="mqtt-events-topic" name="mqtt.topics.events" value="frigate/events" required>
+                </div>
+                <div class="form-group">
+                    <label for="mqtt-results-topic">Results Topic</label>
+                    <input type="text" id="mqtt-results-topic" name="mqtt.topics.results" value="frigate/ai/results" required>
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <h2>Frigate Configuration</h2>
+                <div class="form-group">
+                    <label for="frigate-url">API URL</label>
+                    <input type="text" id="frigate-url" name="frigate.api_url" required>
+                    <div class="help-text">URL of your Frigate instance (e.g., http://192.168.2.72:5000)</div>
+                </div>
+                <div class="form-group">
+                    <label for="frigate-api-key">API Key (optional)</label>
+                    <input type="text" id="frigate-api-key" name="frigate.api_key">
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <h2>Google Gemini Configuration</h2>
+                <div class="form-group">
+                    <label for="gemini-api-key">API Key</label>
+                    <input type="text" id="gemini-api-key" name="gemini.api_key" required>
+                    <div class="help-text">Get your API key from Google AI Studio</div>
+                </div>
+                <div class="form-group">
+                    <label for="gemini-model">Model</label>
+                    <input type="text" id="gemini-model" name="gemini.model" value="gemini-2.0-flash-exp" required>
+                </div>
+                <div class="form-group">
+                    <label for="gemini-temperature">Temperature</label>
+                    <input type="number" id="gemini-temperature" name="gemini.temperature" value="0" min="0" max="1" step="0.1" required>
+                </div>
+                <div class="form-group">
+                    <label for="gemini-frames">Frames to Extract</label>
+                    <input type="number" id="gemini-frames" name="gemini.frames_to_extract" value="20" min="1" max="100" required>
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <h2>Event Filters</h2>
+                <div class="form-group">
+                    <label for="filter-cameras">Camera Names (comma-separated)</label>
+                    <textarea id="filter-cameras" name="filters.cameras" required>Tuin</textarea>
+                    <div class="help-text">Only process events from these cameras</div>
+                </div>
+                <div class="form-group">
+                    <label for="filter-objects">Object Labels (comma-separated)</label>
+                    <textarea id="filter-objects" name="filters.objects" required>bird</textarea>
+                    <div class="help-text">Only process events with these object labels</div>
+                </div>
+            </div>
+            
+            <div class="config-section">
+                <h2>Debug Options</h2>
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="debug-mode" name="debug_mode">
+                        <label for="debug-mode">Enable Debug Mode</label>
+                    </div>
+                    <div class="help-text">Show all events and detailed processing information</div>
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <div>
+                    <button type="submit" class="btn">Save Configuration</button>
+                    <button type="button" class="btn btn-secondary" onclick="loadConfig()">Reset</button>
+                </div>
+                <a href="/" class="btn btn-secondary">Back to Dashboard</a>
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        const form = document.getElementById('config-form');
+        const messageEl = document.getElementById('message');
+        
+        // Load current configuration
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                
+                // Populate form fields
+                document.getElementById('mqtt-broker').value = config.mqtt.broker;
+                document.getElementById('mqtt-port').value = config.mqtt.port;
+                document.getElementById('mqtt-username').value = config.mqtt.username || '';
+                document.getElementById('mqtt-password').value = config.mqtt.password || '';
+                document.getElementById('mqtt-events-topic').value = config.mqtt.topics.events;
+                document.getElementById('mqtt-results-topic').value = config.mqtt.topics.results;
+                
+                document.getElementById('frigate-url').value = config.frigate.api_url;
+                document.getElementById('frigate-api-key').value = config.frigate.api_key || '';
+                
+                document.getElementById('gemini-api-key').value = config.gemini.api_key || '';
+                document.getElementById('gemini-model').value = config.gemini.model;
+                document.getElementById('gemini-temperature').value = config.gemini.temperature;
+                document.getElementById('gemini-frames').value = config.gemini.frames_to_extract;
+                
+                document.getElementById('filter-cameras').value = config.filters.cameras.join(', ');
+                document.getElementById('filter-objects').value = config.filters.objects.join(', ');
+                
+                document.getElementById('debug-mode').checked = config.debug_mode || false;
+            } catch (error) {
+                showMessage('Failed to load configuration', 'error');
+            }
+        }
+        
+        // Save configuration
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Build config object from form
+            const config = {
+                mqtt: {
+                    broker: document.getElementById('mqtt-broker').value,
+                    port: parseInt(document.getElementById('mqtt-port').value),
+                    username: document.getElementById('mqtt-username').value,
+                    password: document.getElementById('mqtt-password').value,
+                    client_id: 'frigate-ai-processor',
+                    topics: {
+                        events: document.getElementById('mqtt-events-topic').value,
+                        results: document.getElementById('mqtt-results-topic').value
+                    }
+                },
+                frigate: {
+                    api_url: document.getElementById('frigate-url').value,
+                    api_key: document.getElementById('frigate-api-key').value
+                },
+                gemini: {
+                    api_key: document.getElementById('gemini-api-key').value,
+                    model: document.getElementById('gemini-model').value,
+                    temperature: parseFloat(document.getElementById('gemini-temperature').value),
+                    max_tokens: 1000,
+                    frames_to_extract: parseInt(document.getElementById('gemini-frames').value)
+                },
+                filters: {
+                    cameras: document.getElementById('filter-cameras').value.split(',').map(s => s.trim()).filter(s => s),
+                    objects: document.getElementById('filter-objects').value.split(',').map(s => s.trim()).filter(s => s)
+                },
+                debug_mode: document.getElementById('debug-mode').checked
+            };
+            
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    showMessage('Configuration saved successfully!', 'success');
+                } else {
+                    showMessage(result.message || 'Failed to save configuration', 'error');
+                }
+            } catch (error) {
+                showMessage('Failed to save configuration', 'error');
+            }
+        });
+        
+        function showMessage(text, type) {
+            messageEl.textContent = text;
+            messageEl.className = `message ${type}`;
+            messageEl.style.display = 'block';
+            
+            setTimeout(() => {
+                messageEl.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Load config on page load
+        loadConfig();
+    </script>
+</body>
+</html>
